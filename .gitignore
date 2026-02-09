@@ -1,0 +1,7 @@
+.venv*
+*.ipynb
+*.pkl
+*.dat
+*.jpg
+*.xml
+*.csv
