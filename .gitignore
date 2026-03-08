@@ -1,9 +1,5 @@
-unilm*
-.venv*
+*.npy
 *.pkl
-*.dat
-*.jpg
-*.xml
-*.pt
+*.wav
 *.csv
-
+*.pt
