@@ -1,5 +1,7 @@
 .venv*
 *.ipynb
+# Victor notebooks wel meenemen op branch Luc
+!Victor/**/*.ipynb
 *.pkl
 *.dat
 *.jpg
