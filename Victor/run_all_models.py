@@ -1,5 +1,5 @@
 """
-run BEATs en EAT, verzamel evaluatiemetrics. resultaten gaan naar results_all_models.json
+run BEATs en EAT, verzamel evaluatiemetrics. resultaten gaan naar results_all_models.json.
 """
 
 import os
