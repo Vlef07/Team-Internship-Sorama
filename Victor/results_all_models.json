@@ -1,0 +1,160 @@
+{
+  "BEATs (frozen)": [
+    {
+      "machine": "bearing",
+      "AUC_source": 56.16,
+      "AUC_target": 48.0,
+      "pAUC": 50.05,
+      "Precision": 50.0,
+      "Recall": 7.0,
+      "F1": 12.28,
+      "ROC_AUC_overall": 52.23,
+      "test_samples": 200
+    },
+    {
+      "machine": "fan",
+      "AUC_source": 49.52,
+      "AUC_target": 44.36,
+      "pAUC": 50.68,
+      "Precision": 49.53,
+      "Recall": 53.0,
+      "F1": 51.21,
+      "ROC_AUC_overall": 48.49,
+      "test_samples": 200
+    },
+    {
+      "machine": "gearbox",
+      "AUC_source": 62.12,
+      "AUC_target": 57.08,
+      "pAUC": 53.21,
+      "Precision": 66.67,
+      "Recall": 4.0,
+      "F1": 7.55,
+      "ROC_AUC_overall": 58.08,
+      "test_samples": 200
+    },
+    {
+      "machine": "slider",
+      "AUC_source": 50.0,
+      "AUC_target": 50.0,
+      "pAUC": 50.0,
+      "Precision": 0.0,
+      "Recall": 0.0,
+      "F1": 0.0,
+      "ROC_AUC_overall": 50.0,
+      "test_samples": 200
+    },
+    {
+      "machine": "ToyCar",
+      "AUC_source": 46.0,
+      "AUC_target": 59.0,
+      "pAUC": 51.89,
+      "Precision": 48.08,
+      "Recall": 50.0,
+      "F1": 49.02,
+      "ROC_AUC_overall": 50.9,
+      "test_samples": 200
+    },
+    {
+      "machine": "ToyTrain",
+      "AUC_source": 50.0,
+      "AUC_target": 50.0,
+      "pAUC": 50.0,
+      "Precision": 0.0,
+      "Recall": 0.0,
+      "F1": 0.0,
+      "ROC_AUC_overall": 50.0,
+      "test_samples": 200
+    },
+    {
+      "machine": "valve",
+      "AUC_source": 50.0,
+      "AUC_target": 50.0,
+      "pAUC": 50.0,
+      "Precision": 0.0,
+      "Recall": 0.0,
+      "F1": 0.0,
+      "ROC_AUC_overall": 50.0,
+      "test_samples": 200
+    }
+  ],
+  "EAT (frozen)": [
+    {
+      "machine": "bearing",
+      "AUC_source": 66.04,
+      "AUC_target": 57.12,
+      "pAUC": 57.63,
+      "Precision": 78.57,
+      "Recall": 22.0,
+      "F1": 34.38,
+      "ROC_AUC_overall": 61.38,
+      "test_samples": 200
+    },
+    {
+      "machine": "fan",
+      "AUC_source": 58.28,
+      "AUC_target": 40.36,
+      "pAUC": 49.0,
+      "Precision": 50.98,
+      "Recall": 52.0,
+      "F1": 51.49,
+      "ROC_AUC_overall": 49.65,
+      "test_samples": 200
+    },
+    {
+      "machine": "gearbox",
+      "AUC_source": 62.8,
+      "AUC_target": 58.56,
+      "pAUC": 51.79,
+      "Precision": 61.54,
+      "Recall": 16.0,
+      "F1": 25.4,
+      "ROC_AUC_overall": 57.89,
+      "test_samples": 200
+    },
+    {
+      "machine": "slider",
+      "AUC_source": 76.92,
+      "AUC_target": 56.28,
+      "pAUC": 50.68,
+      "Precision": 52.94,
+      "Recall": 9.0,
+      "F1": 15.38,
+      "ROC_AUC_overall": 66.19,
+      "test_samples": 200
+    },
+    {
+      "machine": "ToyCar",
+      "AUC_source": 61.0,
+      "AUC_target": 43.6,
+      "pAUC": 47.74,
+      "Precision": 53.29,
+      "Recall": 89.0,
+      "F1": 66.67,
+      "ROC_AUC_overall": 51.96,
+      "test_samples": 200
+    },
+    {
+      "machine": "ToyTrain",
+      "AUC_source": 65.04,
+      "AUC_target": 61.64,
+      "pAUC": 54.58,
+      "Precision": 61.22,
+      "Recall": 60.0,
+      "F1": 60.61,
+      "ROC_AUC_overall": 63.15,
+      "test_samples": 200
+    },
+    {
+      "machine": "valve",
+      "AUC_source": 88.44,
+      "AUC_target": 69.96,
+      "pAUC": 70.05,
+      "Precision": 90.48,
+      "Recall": 19.0,
+      "F1": 31.4,
+      "ROC_AUC_overall": 77.68,
+      "test_samples": 200
+    }
+  ]
+}
