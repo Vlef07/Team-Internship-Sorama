@@ -1,7 +1,5 @@
 """
-Run BEATs + EAT models, collect evaluation metrics.
-BEATs features are cached from overnight run; EAT needs extraction.
-Results saved to results_all_models.json
+run BEATs en EAT, verzamel evaluatiemetrics. resultaten gaan naar results_all_models.json
 """
 
 import os
@@ -19,41 +17,52 @@ from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 
+# waarschuwingen van libs uitzetten zodat de uitvoer leesbaar blijft
 warnings.filterwarnings("ignore")
 
+# map waar dit script staat, en pad naar BEATs code toevoegen aan python path
 BASE_DIR = Path(__file__).parent
 sys.path.append(str(BASE_DIR.parent / "unilm" / "beats"))
 
+# dataset en machine types voor DCASE 2025 task 2
 YEAR = "dcase2025t2"
 MACHINES = ["bearing", "fan", "gearbox", "slider", "ToyCar", "ToyTrain", "valve"]
+# sample rate waar we alle audio naartoe resamplen
 TARGET_SR = 16000
+# aantal PCA componenten na feature extractie
 PCA_COMPONENTS = 128
+# aantal buren voor KNN, en welk percentiel van de train afstanden we als drempel gebruiken
 KNN_K = 5
 KNN_THRESHOLD_PERCENTILE = 95
+# hoeveel bestanden we per batch inladen voor feature extractie
 BATCH_SIZE = 8
+# gpu als beschikbaar anders cpu
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 if DEVICE == "cuda":
     torch.backends.cudnn.benchmark = True
 
-# EAT mel spectrogram parameters (from Victor's notebook)
+# voor EAT hebben we mel spectrogram met vaste lengte en normalisatie (zoals in Victors notebook)
 EAT_TARGET_LENGTH = 512
 EAT_NORM_MEAN = -4.268
 EAT_NORM_STD = 4.569
 
 
 def get_data_path(machine):
+    # pad naar de ruwe wav bestanden voor één machine (dev_data, raw)
     return BASE_DIR / "data" / YEAR / "dev_data" / "raw" / machine
 
 
 def get_features_dir(model_name, machine):
+    # pad naar de map waar we features en pca voor deze machine/model opslaan, map wordt aangemaakt
     p = BASE_DIR / "features" / model_name / f"{YEAR}_features" / "dev_features" / "raw_features" / f"{machine}_features"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
-# ──────────────────────────── Audio loading ────────────────────────────
+# audio inladen
 
 def load_audio(file_path, target_sr=TARGET_SR):
+    # laad wav, maak mono als stereo, resample naar target_sr, pad korte fragmenten
     waveform, sr = torchaudio.load(file_path)
     if waveform.shape[0] > 1:
         waveform = waveform.mean(dim=0)
@@ -67,30 +76,34 @@ def load_audio(file_path, target_sr=TARGET_SR):
 
 
 def wav_to_mel(file_path, target_length=EAT_TARGET_LENGTH):
-    """Convert wav file to mel spectrogram for EAT (from Victor's UASD_EAT.ipynb)."""
+    # zet wav om naar mel spectrogram voor EAT, zelfde aanpak als in UASD_EAT notebook
     waveform, sr = torchaudio.load(file_path)
     if waveform.shape[0] > 1:
         waveform = waveform.mean(dim=0, keepdim=True)
     if sr != 16000:
         waveform = torchaudio.functional.resample(waveform, sr, 16000)
 
+    # kaldi fbank geeft mel filterbank, 128 bins, frame shift 10 ms
     fbank = torchaudio.compliance.kaldi.fbank(
         waveform, htk_compat=True, sample_frequency=16000,
         use_energy=False, window_type='hanning',
         num_mel_bins=128, dither=0.0, frame_shift=10
-    )  # [T, 128]
+    )
 
+    # knip of pad tot vaste lengte
     T = fbank.shape[0]
     if T < target_length:
         fbank = torch.nn.functional.pad(fbank, (0, 0, 0, target_length - T))
     else:
         fbank = fbank[:target_length, :]
 
+    # normaliseren en extra dimensies voor model input
     fbank = (fbank - EAT_NORM_MEAN) / (EAT_NORM_STD * 2)
-    return fbank.unsqueeze(0).unsqueeze(0)  # [1, 1, T, 128]
+    return fbank.unsqueeze(0).unsqueeze(0)
 
 
 def _load_audio_worker(args):
+    # worker voor parallel inladen, geeft bestandsnaam zonder extensie en waveform of None bij fout
     file_path, target_sr = args
     try:
         return (file_path.stem, load_audio(str(file_path), target_sr))
@@ -99,6 +112,7 @@ def _load_audio_worker(args):
 
 
 def _load_mel_worker(args):
+    # worker voor EAT, laad wav en zet om naar mel, geeft stem en tensor of None
     file_path, _ = args
     try:
         return (file_path.stem, wav_to_mel(str(file_path)))
@@ -106,10 +120,10 @@ def _load_mel_worker(args):
         return (file_path.stem, None)
 
 
-# ──────────────────────────── Feature extraction ────────────────────────────
+# feature extractie met caching
 
 def extract_features_for_split(model_name, machine, split, extract_fn, loader_fn):
-    """Extract features with partial caching."""
+    # haal features op voor train of test van één machine, sla per bestand op als npy, skip wat al bestaat
     features_dir = get_features_dir(model_name, machine)
     split_dir = features_dir / f"{split}_features"
     split_dir.mkdir(parents=True, exist_ok=True)
@@ -124,6 +138,7 @@ def extract_features_for_split(model_name, machine, split, extract_fn, loader_fn
         print(f"  [WARN] No WAV files in {data_path}")
         return None
 
+    # bekijk welke wavs al een npy hebben
     already_done = {f.stem for f in split_dir.glob("*.npy")}
     todo_files = [f for f in wav_files if f.stem not in already_done]
 
@@ -138,6 +153,7 @@ def extract_features_for_split(model_name, machine, split, extract_fn, loader_fn
     processed = 0
     t0 = time.time()
 
+    # parallel audio laden en dan per batch door extract_fn halen
     with ThreadPoolExecutor(max_workers=4) as executor:
         for batch_start in range(0, total_todo, BATCH_SIZE):
             batch_files = todo_files[batch_start:batch_start + BATCH_SIZE]
@@ -162,6 +178,7 @@ def extract_features_for_split(model_name, machine, split, extract_fn, loader_fn
                 print(f"    {processed}/{total_todo} new ({rate:.1f}/sec, ETA: {eta:.0f}s)")
 
     print(f"  Done: {processed} new + {cached} cached = {processed + cached} total")
+    # laad alle npy voor deze split in volgorde van wav_files
     all_features = []
     for f in wav_files:
         npy_path = split_dir / f"{f.stem}.npy"
@@ -170,9 +187,10 @@ def extract_features_for_split(model_name, machine, split, extract_fn, loader_fn
     return np.array(all_features) if all_features else None
 
 
-# ──────────────────────────── PCA + KNN ────────────────────────────
+# PCA en KNN voor anomaly score en evaluatie
 
 def apply_pca(model_name, machine, train_features, test_features):
+    # fit PCA op train, transform train en test, sla pca en features op in pca submap
     pca_dir = get_features_dir(model_name, machine) / "pca"
     pca_dir.mkdir(parents=True, exist_ok=True)
 
@@ -191,6 +209,7 @@ def apply_pca(model_name, machine, train_features, test_features):
 
 
 def get_test_labels(machine):
+    # lees per test wav uit de bestandsnaam of het normal of anomaly is, -1 bij onbekend
     wav_files = sorted((get_data_path(machine) / "test").glob("*.wav"))
     labels = []
     for f in wav_files:
@@ -205,6 +224,7 @@ def get_test_labels(machine):
 
 
 def get_domain_info(machine):
+    # lees per test wav uit de bestandsnaam of het source of target domein is
     wav_files = sorted((get_data_path(machine) / "test").glob("*.wav"))
     domains = []
     for f in wav_files:
@@ -219,6 +239,7 @@ def get_domain_info(machine):
 
 
 def evaluate_knn(train_pca, test_pca, y_test, domains, machine_name):
+    # fit KNN op train, drempel = percentiel van de K-de buur afstand op train, test = K-de buur afstand als anomaly score
     knn = NearestNeighbors(n_neighbors=KNN_K + 1)
     knn.fit(train_pca)
 
@@ -228,9 +249,11 @@ def evaluate_knn(train_pca, test_pca, y_test, domains, machine_name):
     test_distances, _ = knn.kneighbors(test_pca)
     test_kth_dist = test_distances[:, KNN_K]
 
+    # hogere afstand dan drempel is anomaly, score voor ROC is de afstand zelf
     predictions = (test_kth_dist > threshold).astype(int)
     y_scores = test_kth_dist
 
+    # alleen samples met geldig label meenemen
     valid = y_test >= 0
     y_valid, pred_valid, scores_valid = y_test[valid], predictions[valid], y_scores[valid]
     domains_valid = [d for d, v in zip(domains, valid) if v]
@@ -238,10 +261,12 @@ def evaluate_knn(train_pca, test_pca, y_test, domains, machine_name):
     precision, recall, f1, _ = precision_recall_fscore_support(y_valid, pred_valid, average='binary')
     roc_auc_all = roc_auc_score(y_valid, scores_valid)
 
+    # AUC apart voor source en target domein
     source_mask = np.array([d == "source" for d in domains_valid])
     target_mask = np.array([d == "target" for d in domains_valid])
 
     def safe_auc(mask):
+        # AUC alleen als er genoeg samples en beide klassen zijn
         if mask.sum() > 1 and len(np.unique(y_valid[mask])) > 1:
             return roc_auc_score(y_valid[mask], scores_valid[mask])
         return None
@@ -249,6 +274,7 @@ def evaluate_knn(train_pca, test_pca, y_test, domains, machine_name):
     auc_source = safe_auc(source_mask)
     auc_target = safe_auc(target_mask)
 
+    # partial AUC tot 10% false positive rate
     try:
         pauc = roc_auc_score(y_valid, scores_valid, max_fpr=0.1)
     except ValueError:
@@ -267,9 +293,10 @@ def evaluate_knn(train_pca, test_pca, y_test, domains, machine_name):
     }
 
 
-# ──────────────────────────── Model runners ────────────────────────────
+# model runners, BEATs en EAT frozen
 
 def run_beats_frozen():
+    # laad BEATs checkpoint, per machine train en test features, pca, knn, en evalueer
     from BEATs import BEATs, BEATsConfig
 
     print("\n" + "=" * 80)
@@ -289,6 +316,7 @@ def run_beats_frozen():
     model.to(DEVICE)
     print(f"  BEATs loaded on {DEVICE}")
 
+    # voor elk audiobestand haal we features op en middelen over tijd (mean pool)
     def extract_fn(waveform):
         waveform = waveform.to(DEVICE)
         with torch.no_grad():
@@ -323,6 +351,7 @@ def run_beats_frozen():
 
 
 def run_eat_frozen():
+    # laad EAT via transformers, patch voor compatibiliteit indien nodig, daarna zelfde flow als BEATs
     print("\n" + "=" * 80)
     print("  MODEL: EAT (frozen)")
     print("=" * 80)
@@ -331,6 +360,7 @@ def run_eat_frozen():
         import transformers
         from transformers import AutoModel
 
+        # eenmalige patch zodat EAT model goed laadt bij tied weights
         _PATCH_FLAG = "_eat_compat_patched"
         if not getattr(transformers.PreTrainedModel, _PATCH_FLAG, False):
             _orig = getattr(transformers.PreTrainedModel, "_adjust_tied_keys_with_tied_pointers", None)
@@ -352,12 +382,12 @@ def run_eat_frozen():
         import traceback; traceback.print_exc()
         return None
 
+    # EAT krijgt mel spectrogram, we nemen het CLS token als embedding
     def extract_fn(mel_tensor):
-        """Extract EAT embedding from a mel spectrogram tensor [1, 1, T, 128]."""
         mel_tensor = mel_tensor.to(DEVICE)
         with torch.no_grad():
-            out = eat_model.extract_features(mel_tensor)  # [1, T, 768]
-            return out[:, 0, :].squeeze(0).cpu().numpy()   # CLS token -> [768]
+            out = eat_model.extract_features(mel_tensor)
+            return out[:, 0, :].squeeze(0).cpu().numpy()
 
     results = []
     for machine in MACHINES:
@@ -386,9 +416,10 @@ def run_eat_frozen():
     return results
 
 
-# ──────────────────────────── Summary + Main ────────────────────────────
+# samenvatting en main
 
 def print_summary(all_results):
+    # print per model een tabel met alle machines en gemiddelden
     print("\n" + "=" * 100)
     print("  FINAL SUMMARY")
     print("=" * 100)
@@ -414,6 +445,7 @@ def print_summary(all_results):
 
 
 if __name__ == "__main__":
+    # run BEATs en EAT, verzamel resultaten, schrijf naar json
     print(f"Device: {DEVICE}")
     print(f"Machines: {MACHINES}")
     start_time = time.time()
