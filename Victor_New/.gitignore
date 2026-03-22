@@ -1,0 +1,10 @@
+*.npy
+*.pkl
+*.wav
+*.csv
+*.pt
+
+# Python bytecode / cache
+__pycache__/
+*.py[cod]
+*.pyc
