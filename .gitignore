@@ -2,6 +2,7 @@
 *.ipynb
 # Victor notebooks wel meenemen op branch Luc
 !Victor/**/*.ipynb
+!Victor_New/**/*.ipynb
 *.pkl
 *.dat
 *.jpg
