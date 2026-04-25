@@ -177,6 +177,83 @@ python synthesize_dcase_data.py --input-root "C:\Path\To\Your\DataRoot" --machin
 
 Once that works, remove `--machines` to generate data for all machine types.
 
+---
+
+## 7. Sorama synthetic data generator
+
+The repository also includes [synthesize_sorama_data.py](synthesize_sorama_data.py) for generating synthetic Sorama-style data from existing Sorama WAV files.
+
+### Supported input layouts
+
+Pass one or more roots with `--input-roots`. Each root can be either:
+
+```text
+RootA/
+  Pump/
+  Bearing/
+```
+
+or:
+
+```text
+RootA/
+  Data Sorama/
+    Pump/
+    Bearing/
+```
+
+Inside `Pump/` and `Bearing/`, the script preserves your existing folder layout, for example `Asset 1/0_normal` and `Asset 1/1_anomaly`.
+
+### Dry-run first (recommended)
+
+```powershell
+python synthesize_sorama_data.py `
+  --input-roots "C:\Path\To\DataRootA" "C:\Path\To\DataRootB" `
+  --output-root "C:\Path\To\DataSorama_Synthetic" `
+  --prefix-with-root-name `
+  --copies-per-source 1 `
+  --dry-run
+```
+
+### Full generation
+
+```powershell
+python synthesize_sorama_data.py `
+  --input-roots "C:\Path\To\DataRootA" "C:\Path\To\DataRootB" "C:\Path\To\DataRootC" `
+  --output-root "C:\Path\To\DataSorama_Synthetic" `
+  --prefix-with-root-name `
+  --copies-per-source 1
+```
+
+### Output behavior
+
+- The directory structure under `Pump/` and `Bearing/` is preserved.
+- For each source WAV, generated files are written with `_synXXX.wav` suffixes.
+- Normal source clips (`0_normal`) generate normal-like synthetic variants.
+- Anomalous source clips (`1_anomaly`) generate anomaly-like synthetic variants.
+
+### Parameters you can tune
+
+`--copies-per-source`
+: Number of generated files per source file.
+
+`--sample-rate`
+: Target sample rate for output files. Use `0` to keep the original sample rate of each source file.
+
+`--seed`
+: Reproducibility seed.
+
+`--prefix-with-root-name`
+: If set, each input root is written to `output-root/<input_root_name>/...` to avoid collisions when combining multiple roots.
+
+`--dry-run`
+: Prints how many files would be generated without writing output.
+
+### Notes
+
+- Some datasets contain malformed WAV files; the script skips unreadable files with a warning.
+- Always run `--dry-run` first when working with large roots.
+
 
 # Setup instruction
 
