@@ -15,7 +15,7 @@ python -m pip install --upgrade pip
 python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu121 \
   torch==2.1.2+cu121 torchaudio==2.1.2+cu121 torchvision==0.16.2+cu121
 
-REQ="$HOME/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_knn_both/requirements_snellius.txt"
+REQ="$HOME/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_stap_b/requirements_snellius.txt"
 python -m pip install --no-cache-dir -r "$REQ"
 python -m pip install --no-cache-dir timm==0.9.16 --no-deps
 

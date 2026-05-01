@@ -1,4 +1,9 @@
-"""EAT LoRA training (Wang 2025). STEP 2/4 in run_wang2025_snellius.slurm, notebook stap 20."""
+"""EAT LoRA training (Wang 2025). STEP 2/4 in run_wang2025_snellius.slurm, notebook stap 20.
+
+Op de cluster: standaard **Stap B** (``EAT_TSE_IN_TRAINING=0``) = train op ruwe mels; TSE alleen in KNN
+(``TSE_MODE=both``). Zet ``EAT_TSE_IN_TRAINING=1`` vóór ``sbatch`` voor **Stap A** (TSE ook vóór mels
+in deze training-loop via ``--train-tse-checkpoint-dir``).
+"""
 
 import argparse
 import csv

@@ -15,7 +15,11 @@
 #   Stap 3  KNN eval (baseline + evt. TSE)  ->  notebook stappen 21 t/m 22
 #   Stap 4  Plots (loss, KNN)       ->  zelfde plot scripts als in het notebook na training
 # Toggle TSE, zet vóór sbatch -> export RUN_TSE=0 om stap 1 en de TSE KNN-tak over te slaan.
-# TSE_MODE hoort bij KNN-eval (off/test-only/both in eval script); default both = bank + test.
+# TSE_MODE hoort bij KNN-eval (off/test-only/both); default both = bank + test.
+#
+# Stap B (default): EAT trainen op ruwe mels, TSE alleen in KNN (both). Zet vóór sbatch:
+#   export EAT_TSE_IN_TRAINING=1
+# om Stap A te draaien (TSE ook in de EAT-training-loop via --train-tse-checkpoint-dir).
 
 set -euo pipefail
 
@@ -31,10 +35,10 @@ source "$VENV/bin/activate"
 
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 
-PROJECT_DIR="$HOME/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_knn_both"
+PROJECT_DIR="$HOME/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_stap_b"
 HOME_DATA_ROOT="$PROJECT_DIR/data/dcase2025t2/dev_data/raw"
 SCRATCH_BASE="${SCRATCH:-$HOME/scratch}"
-SCRATCH_DATA_ROOT="$SCRATCH_BASE/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_knn_both/data/dcase2025t2/dev_data/raw"
+SCRATCH_DATA_ROOT="$SCRATCH_BASE/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_stap_b/data/dcase2025t2/dev_data/raw"
 SAVE_DIR="$PROJECT_DIR/checkpoints/eat_lora_system1"
 TSE_DIR="$PROJECT_DIR/checkpoints/tse"
 
@@ -49,6 +53,8 @@ RUN_TSE="${RUN_TSE:-1}"
 TSE_STEPS="${TSE_STEPS:-3000}"
 TSE_BATCH="${TSE_BATCH:-8}"
 TSE_MODE="${TSE_MODE:-both}"
+# Stap B default 0: geen TSE in EAT-train; Stap A: export EAT_TSE_IN_TRAINING=1
+EAT_TSE_IN_TRAINING="${EAT_TSE_IN_TRAINING:-0}"
 
 mkdir -p "$PROJECT_DIR/logs"
 mkdir -p "$RESULTS_DIR"
@@ -90,8 +96,11 @@ fi
 echo "STEP 2/4 - EAT-LoRA training"
 
 eat_train_tse_args=()
-if [ "$RUN_TSE" = "1" ]; then
+if [ "$RUN_TSE" = "1" ] && [ "$EAT_TSE_IN_TRAINING" = "1" ]; then
   eat_train_tse_args=( --train-tse-checkpoint-dir "$TSE_DIR" )
+  echo "EAT met TSE op train-waveforms (Stap A, EAT_TSE_IN_TRAINING=1)"
+else
+  echo "EAT op ruwe waveforms (Stap B: geen --train-tse-checkpoint-dir); KNN gebruikt nog TSE indien RUN_TSE=1 en TSE_MODE"
 fi
 
 python -u train_wang2025_snellius.py \

@@ -24,10 +24,10 @@ source "$VENV/bin/activate"
 
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 
-PROJECT_DIR="$HOME/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_knn_both"
+PROJECT_DIR="$HOME/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_stap_b"
 HOME_DATA_ROOT="$PROJECT_DIR/data/dcase2025t2/dev_data/raw"
 SCRATCH_BASE="${SCRATCH:-$HOME/scratch}"
-SCRATCH_DATA_ROOT="$SCRATCH_BASE/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_knn_both/data/dcase2025t2/dev_data/raw"
+SCRATCH_DATA_ROOT="$SCRATCH_BASE/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_stap_b/data/dcase2025t2/dev_data/raw"
 
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-$PROJECT_DIR/checkpoints/eat_lora_system1}"
 CHECKPOINT_PATH="${CHECKPOINT_PATH:-auto}"
