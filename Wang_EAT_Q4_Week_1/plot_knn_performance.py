@@ -1,3 +1,5 @@
+"""KNN performance over training steps. Hoort bij STEP 4/4 in run_wang2025_snellius.slurm."""
+
 import argparse
 import glob
 import os
@@ -20,6 +22,16 @@ def _extract_step(path: str):
         return int(m.group(1))
 
     return None
+
+
+def _variant_from_path(path: str) -> str:
+    """Scheidt baseline-KNN van TSE-KNN voor aparte plotlijnen (geen zigzag op dezelfde step)."""
+    base = os.path.basename(path)
+    if "_tse_" in base:
+        m = re.search(r"_tse_([^.]+)", base)
+        suffix = m.group(1) if m else "tse"
+        return f"TSE ({suffix})"
+    return "Baseline (geen TSE op waveform)"
 
 
 def _hmean_from_summary(df: pd.DataFrame) -> float:
@@ -60,6 +72,7 @@ def main():
         rows.append(
             {
                 "step": step,
+                "variant": _variant_from_path(path),
                 "hmean": hmean,
                 "auc_all_mean": auc_all_mean,
                 "file": path,
@@ -69,26 +82,55 @@ def main():
     if not rows:
         raise ValueError("Geen bruikbare csv files met step-nummer gevonden")
 
-    perf = pd.DataFrame(rows).sort_values("step")
-    os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
+    perf = pd.DataFrame(rows)
+    perf = perf.sort_values(["variant", "step"]).drop_duplicates(
+        subset=["step", "variant"], keep="last"
+    )
+
+    out_dir = os.path.dirname(args.out_csv)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     perf.to_csv(args.out_csv, index=False)
 
-    plt.figure(figsize=(8, 4.5))
-    plt.plot(perf["step"], perf["hmean"], marker="o", linewidth=2, label="Harmonic mean")
-    plt.plot(perf["step"], perf["auc_all_mean"], marker="s", linewidth=2, label="Mean AUC_all")
-    plt.xlabel("Checkpoint step")
-    plt.ylabel("Score")
-    plt.title("KNN performance vs checkpoint")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
+    fig, axes = plt.subplots(2, 1, figsize=(8, 6.5), sharex=True)
+    variants = sorted(
+        perf["variant"].unique(),
+        key=lambda v: (0 if v.startswith("Baseline") else 1, v),
+    )
+    markers = ["o", "s", "^", "D", "v"]
+    for i, variant in enumerate(variants):
+        sub = perf.loc[perf["variant"] == variant].sort_values("step")
+        kw = dict(
+            linewidth=2,
+            label=variant,
+            marker=markers[i % len(markers)],
+            markersize=5,
+        )
+        axes[0].plot(sub["step"], sub["hmean"], **kw)
+        axes[1].plot(sub["step"], sub["auc_all_mean"], **kw)
+
+    axes[0].set_ylabel("Harmonic mean")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend(loc="best", fontsize=8)
+    axes[0].set_title("KNN vs checkpoint (baseline en TSE apart)")
+
+    axes[1].set_xlabel("Checkpoint step")
+    axes[1].set_ylabel("Mean AUC_all")
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend(loc="best", fontsize=8)
+
     plt.tight_layout()
     plt.savefig(args.out_png, dpi=160)
 
     print("Saved:")
     print(f"- {args.out_csv}")
     print(f"- {args.out_png}")
-    print("\nTop by harmonic mean:")
-    print(perf.sort_values("hmean", ascending=False).head(5).to_string(index=False))
+    print("\nTop by harmonic mean (overall):")
+    print(
+        perf.sort_values("hmean", ascending=False)
+        .head(8)
+        .to_string(index=False)
+    )
 
 
 if __name__ == "__main__":

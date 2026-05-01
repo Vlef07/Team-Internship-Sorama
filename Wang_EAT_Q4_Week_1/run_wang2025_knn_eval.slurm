@@ -1,4 +1,5 @@
 #!/bin/bash
+# Losse KNN eval job; zelfde eval script als STEP 3 in run_wang2025_snellius.slurm (notebook stappen 21 en 22).
 #SBATCH --partition=gpu_mig
 #SBATCH --gpus=1
 #SBATCH --job-name=wang2025-knn
@@ -23,10 +24,10 @@ source "$VENV/bin/activate"
 
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 
-PROJECT_DIR="$HOME/Sorama_Internship/Victor_week_9"
+PROJECT_DIR="$HOME/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_knn_both"
 HOME_DATA_ROOT="$PROJECT_DIR/data/dcase2025t2/dev_data/raw"
 SCRATCH_BASE="${SCRATCH:-$HOME/scratch}"
-SCRATCH_DATA_ROOT="$SCRATCH_BASE/Sorama_Internship/Victor_week_9/data/dcase2025t2/dev_data/raw"
+SCRATCH_DATA_ROOT="$SCRATCH_BASE/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_knn_both/data/dcase2025t2/dev_data/raw"
 
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-$PROJECT_DIR/checkpoints/eat_lora_system1}"
 CHECKPOINT_PATH="${CHECKPOINT_PATH:-auto}"
@@ -84,3 +85,6 @@ else
     --embed-batch-size "$EMBED_BS" \
     --output-csv "$RESULTS_CSV"
 fi
+
+# Optioneel TSE-KNN (zelfde flags als eval_wang2025_knn_snellius.py):
+#   --tse-checkpoint-dir "$PROJECT_DIR/checkpoints/tse" --tse-mode both

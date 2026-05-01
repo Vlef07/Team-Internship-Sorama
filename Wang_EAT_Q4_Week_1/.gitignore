@@ -1,0 +1,45 @@
+# Python / tooling
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.cursor/
+
+# Notebooks en grote outputs (repo = vooral code; notebook lokaal of apart)
+*.ipynb
+
+# DCASE / runs: zwaar — niet committen
+data/
+checkpoints/
+results/
+logs/
+tensorboard/
+
+# Model weights / features
+*.pt
+*.pth
+*.pkl
+*.onnx
+
+# Media / logs
+*.jpg
+*.jpeg
+*.png
+*.wav
+*.flac
+*.mp4
+*.xml
+*.dat
+
+# CSV: meestal metrics of DCASE-tabellen (groot). Kleine config in root zou
+# kunnen als je ooit een uitzondering nodig hebt: gebruik `git add -f file.csv`.
+*.csv
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.swp
+.idea/

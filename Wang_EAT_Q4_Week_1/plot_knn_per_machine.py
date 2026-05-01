@@ -1,7 +1,10 @@
+"""KNN scores per machine uit CSVs. Hoort bij STEP 4/4 (plots) in run_wang2025_snellius.slurm."""
+
 import argparse
 import glob
 import os
 import re
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,10 +19,26 @@ def _extract_step(path: str):
     return None
 
 
-def _pick_csv(pattern: str, prefer: str) -> str:
+def _filter_paths(paths: list, variant: str) -> list:
+    """variant: baseline = geen _tse_ in bestandsnaam; tse = wel _tse_; any = geen filter."""
+    if variant == "any":
+        return list(paths)
+    out = []
+    for p in paths:
+        base = os.path.basename(p)
+        has_tse = "_tse_" in base
+        if variant == "baseline" and not has_tse:
+            out.append(p)
+        elif variant == "tse" and has_tse:
+            out.append(p)
+    return out
+
+
+def _pick_csv(pattern: str, prefer: str, variant: str) -> str:
     files = sorted(glob.glob(pattern))
+    files = _filter_paths(files, variant)
     if not files:
-        raise FileNotFoundError(f"Geen csv gevonden met pattern: {pattern}")
+        return ""
 
     if prefer == "last":
         last = [f for f in files if "knn_eval_last" in os.path.basename(f)]
@@ -29,7 +48,7 @@ def _pick_csv(pattern: str, prefer: str) -> str:
     step_files = [(f, _extract_step(f)) for f in files]
     step_files = [(f, s) for f, s in step_files if s is not None]
     if step_files:
-        step_files.sort(key=lambda x: x[1])
+        step_files.sort(key=lambda x: (x[1], x[0]))
         return step_files[-1][0]
 
     return files[-1]
@@ -38,6 +57,16 @@ def _pick_csv(pattern: str, prefer: str) -> str:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pattern", default="results/knn_eval_*.csv")
+    parser.add_argument(
+        "--variant",
+        choices=["baseline", "tse", "any"],
+        default="baseline",
+        help=(
+            "baseline: alleen csv zonder _tse_ in de naam (KNN zonder TSE op waveform). "
+            "tse: alleen csv met _tse_ (KNN met TSE). "
+            "any: oud gedrag, alle bestanden (kan dubbele step mengen — ongeschikt als baseline én TSE bestaan)."
+        ),
+    )
     parser.add_argument(
         "--prefer",
         choices=["last", "highest_step"],
@@ -48,7 +77,17 @@ def main():
     parser.add_argument("--out-png", default="results/knn_per_machine.png")
     args = parser.parse_args()
 
-    csv_path = args.input_csv or _pick_csv(args.pattern, args.prefer)
+    if args.input_csv:
+        csv_path = args.input_csv
+    else:
+        csv_path = _pick_csv(args.pattern, args.prefer, args.variant)
+        if not csv_path:
+            print(
+                f"Geen csv voor variant={args.variant!r} met pattern {args.pattern!r}; sla over.",
+                file=sys.stderr,
+            )
+            sys.exit(0)
+
     print(f"Using csv: {csv_path}")
 
     df = pd.read_csv(csv_path).set_index("machine")

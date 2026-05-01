@@ -1,3 +1,11 @@
+"""KNN evaluatie op EAT checkpoints (Wang 2025) met optionele TSE op waveforms.
+
+Hoort bij STEP 3/4 in run_wang2025_snellius.slurm (notebook stappen 21 t/m 22).
+Cluster default (slurm): ``TSE_MODE=both`` — zelfde TSE-checkpoints op train-bank en test.
+``test-only`` geeft vaak een lagere score door mismatch tussen ruwe bank en enhanced test.
+TSE uit: ``--tse-mode off`` of laat ``--tse-checkpoint-dir`` weg; sluit aan bij ``RUN_TSE=0``.
+"""
+
 import argparse
 import os
 import sys
@@ -18,6 +26,14 @@ from train_wang2025_snellius import (
     _resolve_train_wav_path,
 )
 
+try:
+    from tse_snellius import TSEMaskNet, load_tse_models
+    _TSE_AVAILABLE = True
+except Exception:
+    TSEMaskNet = None
+    load_tse_models = None
+    _TSE_AVAILABLE = False
+
 
 def _dev_row_to_label_and_domain(fn: str):
     fn = str(fn).replace("\\", "/")
@@ -31,12 +47,19 @@ def _dev_row_to_label_and_domain(fn: str):
     return y, domain
 
 
-def load_mel_from_wav_path(file_path: str, target_length: int = 1024):
+def _load_waveform_16k(file_path: str) -> torch.Tensor:
+    """Read wav, mono, 16 kHz, shape [1, T], already DC centered."""
     waveform, sr = torchaudio.load(file_path)
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
     if sr != 16000:
         waveform = torchaudio.transforms.Resample(sr, 16000)(waveform)
-
     waveform = waveform - waveform.mean()
+    return waveform
+
+
+def _waveform_to_eat_mel(waveform: torch.Tensor, target_length: int = 1024) -> torch.Tensor:
+    """Turn a [1, T] waveform into a normalised EAT style mel of shape [target_length, 128]."""
     mel = torchaudio.compliance.kaldi.fbank(
         waveform,
         htk_compat=True,
@@ -59,6 +82,32 @@ def load_mel_from_wav_path(file_path: str, target_length: int = 1024):
     norm_mean, norm_std = -4.268, 4.569
     mel = (mel - norm_mean) / (norm_std * 2)
     return mel
+
+
+@torch.no_grad()
+def _enhance_waveform_if_requested(
+    waveform: torch.Tensor,
+    tse_model,
+    device: torch.device,
+) -> torch.Tensor:
+    """If a TSE model is given, run it on the waveform; otherwise return the input."""
+    if tse_model is None:
+        return waveform
+    wav = waveform.to(device)
+    enhanced = tse_model(wav).cpu()
+    return enhanced
+
+
+def load_mel_from_wav_path(
+    file_path: str,
+    target_length: int = 1024,
+    tse_model=None,
+    tse_device: torch.device = None,
+):
+    waveform = _load_waveform_16k(file_path)
+    if tse_model is not None:
+        waveform = _enhance_waveform_if_requested(waveform, tse_model, tse_device)
+    return _waveform_to_eat_mel(waveform, target_length=target_length)
 
 
 @torch.no_grad()
@@ -178,6 +227,7 @@ def _embed_train_bank(
     device: torch.device,
     embed_batch_size: int,
     machine: str,
+    tse_model=None,
 ):
     bank_emb = []
     pending_mels = []
@@ -196,7 +246,9 @@ def _embed_train_bank(
             skipped_tr += 1
             continue
         try:
-            pending_mels.append(load_mel_from_wav_path(fp))
+            pending_mels.append(
+                load_mel_from_wav_path(fp, tse_model=tse_model, tse_device=device)
+            )
         except Exception as ex:
             skipped_tr += 1
             print(f"[{machine}] train wav fout {fp}: {ex}")
@@ -224,6 +276,7 @@ def _embed_test_queries(
     device: torch.device,
     embed_batch_size: int,
     machine: str,
+    tse_model=None,
 ):
     q_emb = []
     pending_mels = []
@@ -252,7 +305,9 @@ def _embed_test_queries(
             continue
 
         try:
-            pending_mels.append(load_mel_from_wav_path(fp))
+            pending_mels.append(
+                load_mel_from_wav_path(fp, tse_model=tse_model, tse_device=device)
+            )
             pending_labels.append(int(lab))
             pending_domains.append(0 if dom == "source" else 1)
         except Exception as ex:
@@ -294,6 +349,23 @@ def main():
     parser.add_argument("--lora-dropout", type=float, default=0.05)
     parser.add_argument("--machines", nargs="*", default=[])
     parser.add_argument("--output-csv", default="results/knn_eval_summary.csv")
+    parser.add_argument(
+        "--tse-checkpoint-dir",
+        default="",
+        help=(
+            "Directory met per machine TSE checkpoints ({machine}.pt). "
+            "Leeg = geen TSE toepassen (baseline)."
+        ),
+    )
+    parser.add_argument(
+        "--tse-mode",
+        choices=["off", "test-only", "both"],
+        default="off",
+        help=(
+            "off = geen TSE. test-only = TSE alleen op test wavs. "
+            "both = TSE op train bank en test wavs (Fujimura Enh/Enh)."
+        ),
+    )
     args = parser.parse_args()
 
     base_path = os.path.normpath(args.data_root)
@@ -318,6 +390,28 @@ def main():
         device=device,
     )
 
+    tse_models = {}
+    if args.tse_mode != "off" and args.tse_checkpoint_dir:
+        if not _TSE_AVAILABLE:
+            print("tse_snellius niet importeerbaar, TSE wordt overgeslagen")
+        elif not os.path.isdir(args.tse_checkpoint_dir):
+            print(
+                f"TSE checkpoint dir bestaat niet: {args.tse_checkpoint_dir}, "
+                "TSE wordt overgeslagen"
+            )
+        else:
+            tse_models = load_tse_models(args.tse_checkpoint_dir, device)
+            if tse_models:
+                print(
+                    f"Loaded TSE checkpoints voor {len(tse_models)} machines "
+                    f"(mode={args.tse_mode})"
+                )
+            else:
+                print(
+                    f"Geen TSE checkpoints gevonden in {args.tse_checkpoint_dir}, "
+                    "TSE wordt overgeslagen"
+                )
+
     machine_dirs = sorted(
         d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))
     )
@@ -341,6 +435,12 @@ def main():
             print(f"[{machine}] skip: geen test/*.wav met test_normal/test_anomaly in naam")
             continue
 
+        tse_model_for_machine = tse_models.get(machine) if tse_models else None
+        tse_for_bank = tse_model_for_machine if args.tse_mode == "both" else None
+        tse_for_test = (
+            tse_model_for_machine if args.tse_mode in ("test-only", "both") else None
+        )
+
         bank_np, skipped_tr = _embed_train_bank(
             eat_lora=eat_lora,
             train_df=train_df,
@@ -348,6 +448,7 @@ def main():
             device=device,
             embed_batch_size=args.embed_batch_size,
             machine=machine,
+            tse_model=tse_for_bank,
         )
         if bank_np is None:
             print(f"[{machine}] skip: geen train wav geladen (overgeslagen {skipped_tr})")
@@ -360,6 +461,7 @@ def main():
             device=device,
             embed_batch_size=args.embed_batch_size,
             machine=machine,
+            tse_model=tse_for_test,
         )
         if q_np is None:
             print(f"[{machine}] skip: geen test wav (overgeslagen {skipped_te})")

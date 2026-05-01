@@ -1,9 +1,5 @@
-.venv*
-*.ipynb
-*.pkl
-*.dat
-*.jpg
-*.xml
-*.csv
-*.wav
-*.pdf
+# Alleen Wang_EAT_Q4_Week_1 en deze file horen in commits; rest van de bovenliggende map is lokaal.
+/*
+!/.gitignore
+!/README.md
+!/Wang_EAT_Q4_Week_1/

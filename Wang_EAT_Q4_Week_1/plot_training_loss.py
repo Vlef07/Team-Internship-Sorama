@@ -1,3 +1,4 @@
+"""Plot EAT-treinloss (CSV). Hoort bij STEP 4/4 in run_wang2025_snellius.slurm."""
 import argparse
 import os
 

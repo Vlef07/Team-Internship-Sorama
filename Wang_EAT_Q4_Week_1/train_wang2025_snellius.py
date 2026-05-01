@@ -1,3 +1,5 @@
+"""EAT LoRA training (Wang 2025). STEP 2/4 in run_wang2025_snellius.slurm, notebook stap 20."""
+
 import argparse
 import csv
 import os
@@ -12,6 +14,11 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import AutoModel
 import transformers.modeling_utils as _hf_modeling_utils
+
+try:
+    from tse_snellius import load_tse_models
+except Exception:
+    load_tse_models = None
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -132,12 +139,29 @@ def _resolve_train_wav_path(base_path, row):
     return os.path.normpath(os.path.join(base_path, str(machine), "train", stem))
 
 
+def _waveform_mono_16k_zero_mean(waveform: torch.Tensor, sr: int) -> torch.Tensor:
+    """Match eval: mono, 16 khz, dc offset removed. shape [1, T]."""
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    if sr != 16000:
+        waveform = torchaudio.transforms.Resample(sr, 16000)(waveform)
+    return waveform - waveform.mean()
+
+
 class EATDCASEDataset(Dataset):
-    def __init__(self, df, encoder, base_path, target_length=1024):
+    def __init__(
+        self,
+        df,
+        encoder,
+        base_path,
+        target_length=1024,
+        tse_models=None,
+    ):
         self.df = df
         self.encoder = encoder
         self.base_path = base_path
         self.target_length = target_length
+        self.tse_models = tse_models if tse_models else None
         self.norm_mean = -4.268
         self.norm_std = 4.569
 
@@ -151,12 +175,38 @@ class EATDCASEDataset(Dataset):
         if not os.path.isfile(file_path):
             raise FileNotFoundError(f"wav ontbreekt: {file_path}")
 
+        fn = str(row["file_name"]).replace("\\\\", "/").replace("\\", "/")
+        if "_machine" in self.df.columns and pd.notna(row.get("_machine")):
+            machine = str(row["_machine"]).strip()
+        elif "/" in fn:
+            machine = fn.split("/")[0]
+        else:
+            machine = str(row.get("_machine", "")).strip()
+
+        domain = "source" if "source" in fn else "target"
+
+        attr_cols = [col for col in self.df.columns if col.endswith("v")]
+        attr_values = [_normalize_attr_value(row[col]) for col in attr_cols if pd.notna(row[col])]
+        attr_values = [v for v in attr_values if v and v.lower() != "noattribute"]
+
+        target_id = self.encoder.encode(machine, domain, attr_values)
+
         waveform, sr = torchaudio.load(file_path)
+        waveform = _waveform_mono_16k_zero_mean(waveform, sr)
 
-        if sr != 16000:
-            waveform = torchaudio.transforms.Resample(sr, 16000)(waveform)
+        tse_net = None
+        if self.tse_models:
+            tse_net = self.tse_models.get(machine)
 
-        waveform = waveform - waveform.mean()
+        if tse_net is not None:
+            with torch.no_grad():
+                wav = waveform.to(dtype=torch.float32)
+                enhanced = tse_net(wav)
+                if enhanced.dim() == 1:
+                    waveform = enhanced.unsqueeze(0)
+                else:
+                    waveform = enhanced
+
         mel = torchaudio.compliance.kaldi.fbank(
             waveform,
             htk_compat=True,
@@ -176,22 +226,6 @@ class EATDCASEDataset(Dataset):
             mel = mel[: self.target_length, :]
 
         mel = (mel - self.norm_mean) / (self.norm_std * 2)
-
-        fn = str(row["file_name"]).replace("\\\\", "/").replace("\\", "/")
-        if "_machine" in self.df.columns and pd.notna(row.get("_machine")):
-            machine = str(row["_machine"]).strip()
-        elif "/" in fn:
-            machine = fn.split("/")[0]
-        else:
-            machine = str(row.get("_machine", "")).strip()
-
-        domain = "source" if "source" in fn else "target"
-
-        attr_cols = [col for col in self.df.columns if col.endswith("v")]
-        attr_values = [_normalize_attr_value(row[col]) for col in attr_cols if pd.notna(row[col])]
-        attr_values = [v for v in attr_values if v and v.lower() != "noattribute"]
-
-        target_id = self.encoder.encode(machine, domain, attr_values)
 
         return mel, torch.tensor(target_id).long()
 
@@ -320,6 +354,14 @@ def main():
         default="",
         help="TensorBoard logdir. Leeg = TensorBoard uit.",
     )
+    parser.add_argument(
+        "--train-tse-checkpoint-dir",
+        default="",
+        help=(
+            "Map met TSE checkpoints ({machine}.pt). Indien gezet: zelfde keten als eval, "
+            "waveform naar TSE naar mel. Machines zonder checkpoint vallen terug op ruwe waveform."
+        ),
+    )
     args = parser.parse_args()
 
     data_root = os.path.normpath(args.data_root)
@@ -336,7 +378,26 @@ def main():
     encoder = DCASELabelEncoder(labels_list)
     master_df = create_master_dataframe(data_root)
 
-    train_dataset = EATDCASEDataset(df=master_df, encoder=encoder, base_path=data_root)
+    tse_train_models = None
+    tse_dir = (args.train_tse_checkpoint_dir or "").strip()
+    if tse_dir:
+        if load_tse_models is None:
+            raise RuntimeError("tse_snellius ontbreekt, kan train-tse-checkpoint-dir niet gebruiken")
+        if not os.path.isdir(tse_dir):
+            raise FileNotFoundError(f"train-tse-checkpoint-dir bestaat niet: {tse_dir}")
+        tse_train_models = load_tse_models(tse_dir, torch.device("cpu"))
+        if not tse_train_models:
+            print(f"waarschuwing: geen .pt in {tse_dir}, EAT traint zonder TSE-voorbewerking")
+            tse_train_models = None
+        else:
+            print(f"EAT training met TSE op cpu voor {len(tse_train_models)} machines (zelfde volgorde als eval)")
+
+    train_dataset = EATDCASEDataset(
+        df=master_df,
+        encoder=encoder,
+        base_path=data_root,
+        tse_models=tse_train_models,
+    )
     loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
