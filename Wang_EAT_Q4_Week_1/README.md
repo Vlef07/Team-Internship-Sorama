@@ -106,53 +106,24 @@ If you want **auto-sync**, we can set up a Git pre-commit hook so syncing happen
 
 # Snellius pipeline en notebook (zelfde volgorde)
 
-De cluster pijplijn staat in `run_wang2025_snellius.slurm`. De uitvoer volgorde is hetzelfde idee als in `test_Wang2025_Luc.ipynb`: eerst TSE, dan EAT train, dan KNN, dan figuren. Alleen in het notebook staan stappen 1 tot en met 16 extra als uitleg (data, labels, EAT idee) vóór de echte pijplijn.
+Dit is de setup waar we nu op draaien. Kort gezegd, EAT leert alleen nog maar op ruwe audio. TSE trainen we nog wel apart, maar tijdens het EAT-trainen zit TSE enhanced audio er niet in. Pas bij de kNN-test fase draait TSE wél op de golfvorm, en wel hetzelfde op de normale bank en op de test (both), zodat je geen scheve vergelijking krijgt.
+Het hoofdscript is `run_wang2025_snellius.slurm`. Dat doet achter elkaar de volgende vier dingen.
 
-**Snellius projectmap:** `run_wang2025_snellius.slurm` en `run_wang2025_knn_eval.slurm` gebruiken nu **`~/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_stap_b`** (eigen checkpoints/results voor de huidige **Stap B**-default: EAT op ruwe mels, TSE in KNN `both`). De vorige map `eat_tse_knn_both` kun je op de cluster laten staan als archief.
 
-**Op Snellius (login of dev node, bash):** nieuwe map + symlink naar je bestaande DCASE `raw` (pas `DATA_SRC` aan als jouw data elders staat).
+1. TSE trainen per machine (`train_tse_snellius.py`). Dit leert de denoise-modellen, nog geen kNN evaluation.
 
-```bash
-BASE="$HOME/Sorama_Internship/EAT_TSE_same_pipeline_train_eval"
-NEW="$BASE/eat_tse_stap_b"
-DATA_SRC="$BASE/Wang_EAT_Q4_Week_1/data/dcase2025t2/dev_data/raw"
+2. EAT met LoRA trainen alleen op ruwe audio (train_wang2025_snellius.py`). Gewoon ruwe wav → mel.
 
-mkdir -p "$NEW/data/dcase2025t2/dev_data"
-ln -sfn "$DATA_SRC" "$NEW/data/dcase2025t2/dev_data/raw"
-ls -la "$NEW/data/dcase2025t2/dev_data/raw"
-mkdir -p "$NEW/logs" "$NEW/checkpoints/tse" "$NEW/results"
-```
+3. kNN eval (`eval_wang2025_knn_snellius.py`). Per checkpoint, eerst zonder TSE (baseline), daarna met TSE op normal bank én test bank (TSE both). Zo kunnen we de baseline vs TSE (both) extension eerlijk vergelijken.
 
-**Op je laptop (PowerShell):** upload alleen code (geen `data/`), bijvoorbeeld:
+4. Plots uit de CSV’s (`plot_training_loss.py`, `plot_knn_per_machine.py`, `plot_knn_performance.py`).
 
-```powershell
-$local = "C:\Users\lucth\Downloads\Sorama Internship\Wang_EAT_Q4_Week_1"
-$stage = "$env:TEMP\eat_tse_stap_b_upload"
-New-Item -ItemType Directory -Force -Path $stage | Out-Null
-robocopy $local $stage /E /XD data checkpoints results .git .ipynb_checkpoints __pycache__ .cursor /NFL /NDL /NJH /NJS /nc /ns /np
-scp -r "$stage\*" "scur2597@snellius.surf.nl:~/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_stap_b/"
-```
 
-Daarna **weer op Snellius (bash):** controleer of `PROJECT_DIR` in de `.slurm` klopt, leeg **`checkpoints/eat_lora_system1`** voor een schone Stap B-run (of zet `auto-resume` uit), dan `cd "$NEW"` en `sbatch run_wang2025_snellius.slurm`.
+Op de cluster verwachten de slurm-bestanden deze map: `~/Sorama_Internship/EAT_TSE_same_pipeline_train_eval/eat_tse_stap_b`. Daar horen de code, `results/`, `checkpoints/` en een werkende `data/.../raw` bij (zelf kopiëren of symlinken naar je DCASE raw). Als `PROJECT_DIR` in de slurm ergens anders wijst, pas dat aan vóór je submit.
 
-| Slurm (STEP) | Script (kort) | Notebook (zelfde inhoud) |
-|--------------|-----------------|-------------------------|
-| STEP 1/4 | `train_tse_snellius.py` | Stappen 17 t/m 19, toggle `RUN_TSE` in het notebook is hetzelfde idee als `export RUN_TSE=0` of `1` vóór `sbatch` |
-| STEP 2/4 | `train_wang2025_snellius.py` | Stap 20 (EAT LoRA training) |
-| STEP 3/4 | `eval_wang2025_knn_snellius.py` | Stappen 21 t/m 22 (KNN, met of zonder TSE via `TSE_MODE` / `--tse-mode`) |
-| STEP 4/4 | `plot_training_loss.py`, `plot_knn_*.py` | Zelfde plot idee: loss na training, KNN per machine, KNN over stappen |
+Wil je helemaal opnieuw trainen, maak `checkpoints/eat_lora_system1` leeg of zet tijdelijk auto-resume uit. Oude EAT-checkpoints die met TSE in de train-loop gemaakt zijn, horen niet bij deze workflow.
+Alleen nog kNN draaien op bestaande checkpoints kan met `run_wang2025_knn_eval.slurm` (zelfde eval-script als stap 3).
+Geen TSE nodig voor een run? Zet vóór sbatch `export RUN_TSE=0`. Dan sla je stap 1 over en valt de TSE-tak bij kNN weg.
+Eenmalig een venv op Snellius: `setup_snellius.sh` en `requirements_snellius.txt`. TSE is gebaseerd op Fujimura et al. (2025), NU technical report DCASE 2025 Task 2.
 
-**TSE uitzetten op de cluster:** vóór `sbatch` zet je `export RUN_TSE=0`. Dan sla je TSE training over en draait KNN eval alleen de baseline (geen TSE tak), net als in het notebook met `RUN_TSE = False`.
-
-**Stap A vs Stap B (EAT en TSE hetzelfde “wereldje” houden):**
-
-- **Stap A:** TSE ook **tijdens EAT-training** op de train-clips (`export EAT_TSE_IN_TRAINING=1` vóór `sbatch`). KNN met `TSE_MODE=both` blijft logisch als je overal enhanced audio gebruikt.
-- **Stap B (slurm-default):** EAT traint op **ruwe** waveforms (`EAT_TSE_IN_TRAINING=0`, geen `--train-tse-checkpoint-dir`). TSE wordt nog wel getraind (als `RUN_TSE=1`) en alleen gebruikt in **KNN** met `TSE_MODE=both` (bank + test). LoRA leest dus ruwe mels; TSE is een vaste frontend alleen bij eval. Voor **nieuwe checkpoints** is dit vaak eenvoudiger te vergelijken met alleen-KNN-TSE. **Let op:** oude EAT-checkpoints die mét TSE in de train-loop zijn geleerd, passen niet bij Stap B; gebruik een lege `checkpoints/eat_lora_system1` (of zet `--auto-resume` tijdelijk uit) voor een schone Stap B-run.
-
-**TSE modus in KNN:** in `run_wang2025_snellius.slurm` is `TSE_MODE` (standaard `both`) hetzelfde als `--tse-mode` in `eval_wang2025_knn_snellius.py`. `export TSE_MODE=test-only` is mogelijk maar geeft vaak bank/test mismatch.
-
-**Plots na STEP 4:** `plot_knn_performance.py` schrijft één PNG met **aparte lijnen** per variant (baseline vs TSE). `plot_knn_per_machine.py` draait tweemaal: `knn_per_machine_baseline.png` en (als `RUN_TSE=1`) `knn_per_machine_tse.png`.
-
-**Stappen vóór TSE in het notebook (1 tot en met 16):** uitleg en voorbereiding, geen exacte 1:1 regel in slurm, omdat op Snellius de data al op schijf staat en de job direct met TSE of EAT kan beginnen.
-
-Zie de paper: Fujimura, T., Kuroyanagi, I., and Toda, T. (2025). The NU systems for DCASE 2025 Challenge Task 2. Technical report, Nagoya University.
+In `test_Wang2025_Luc.ipynb` staat vooral conceptuele uitleg

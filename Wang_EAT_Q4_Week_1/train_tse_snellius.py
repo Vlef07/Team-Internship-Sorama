@@ -1,17 +1,30 @@
-"""Train one TSE model per machine type.
+"""Één TSE-model per machinetype trainen. STEP 1/4 in run_wang2025_snellius.slurm
+(notebook: ongeveer stappen 17 t/m 19).
 
-Dit is STEP 1/4 in run_wang2025_snellius.slurm (in het notebook: stappen 17 t/m 19).
+We willen een klein netwerk per machine dat rommel op de opname dempt en het
+machinesignaal dichter bij "schoon" probeert te brengen. Dat netwerk gebruiken we
+later niet tijdens EAT-train (training fase), wél bij kNN-eval (testing fase) op de golfvorm. Fujimura
+et.al. (2025) doen iets vergelijkbaars met een zwaardere architectuur en extra loss,
+hier trainen we met een negatieve SNR-loss op de golfvorm (L_D).
 
-Based on Fujimura et al. (2025), Section 2.1: a per machine TSE model that
-learns to extract the target machine signal from a noisy mixture. We train
-with a negative SNR reconstruction loss on waveforms (same L_D spirit as the paper).
+Stap voor stap wat de code doet:
 
-Usage on Snellius:
-    python -u train_tse_snellius.py \
-        --data-root "$SCRATCH_DATA_ROOT" \
-        --save-dir "$PROJECT_DIR/checkpoints/tse" \
-        --num-steps 3000 \
-        --loss-csv "$PROJECT_DIR/results/tse_loss.csv"
+1) main zoekt alle machines onder data-root. Voor elke machine: pad naar {machine}.pt
+   in save-dir, tenzij --skip-existing en het bestand al bestaat.
+2) train_one_machine verzamelt train-wavs van dát machinetype als "schone" doelen
+   (list_target_wavs → TSEWaveformDataset). Elke minibatch zijn korte stukken audio
+   op vaste lengte en sample rate.
+3) CrossMachineNoiseBank pakt ruis van andere machines (en bruikbare noise uit de set).
+   Zo krijg je realistische mengsels: de machine zelf + storende geluiden die niet van
+   die machine hoeven te komen.
+4) Voor elk fragment in de batch, mix_at_random_snr koppelt schoon signaal en ruis met
+   een willekeurige SNR tussen snr-min en snr-max. Dat maakt het model robuuster.
+5) TSEMaskNet(noisy) voorspelt een opgeschoonde golfvorm. De loss is neg_snr_loss(
+   enhanced, clean): hoe beter de output op het originele schone segment lijkt, hoe
+   lager de loss. AdamW + gradient clip, num_steps updates per machine.
+6) torch.save schrijft model_state_dict + machine-naam naar save-dir/{machine}.pt.
+   Optioneel append van (machine, step, gemiddelde loss) naar loss-csv.
+
 """
 
 import argparse

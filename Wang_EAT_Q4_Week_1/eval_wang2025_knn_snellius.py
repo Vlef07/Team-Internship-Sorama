@@ -1,9 +1,38 @@
 """KNN evaluatie op EAT checkpoints (Wang 2025) met optionele TSE op waveforms.
 
-Hoort bij STEP 3/4 in run_wang2025_snellius.slurm (notebook stappen 21 t/m 22).
-Cluster default (slurm): ``TSE_MODE=both`` — zelfde TSE-checkpoints op train-bank en test.
-``test-only`` geeft vaak een lagere score door mismatch tussen ruwe bank en enhanced test.
-TSE uit: ``--tse-mode off`` of laat ``--tse-checkpoint-dir`` weg; sluit aan bij ``RUN_TSE=0``.
+Hoort bij STEP 3 in run_wang2025_snellius.slurm (na training), de plot-scripts daaronder zijn STEP 4.
+In het notebook: vergelijk met de KNN-cellen na EAT-training.
+Stap voor stap wat dit script doet.
+
+1) Args en paden. Je geeft minstens --checkpoint (één EAT .pt) en --data-root (DCASE raw met
+   machine/train en machine/test). Optioneel -> map met TSE-checkpoints en --tse-mode (off,
+   test-only, both). Op de cluster is both normaal, zelfde TSE op normale bank én test.
+2) Model laden. Er wordt een vers EAT-base uit Hugging Face gezet, LoRA-config zoals tijdens
+   trainen, en jouw opgeslagen gewichten ingelezen. Alles staat op eval() en no_grad, er wordt
+   niet getraind, alleen vooruitgerekend.
+3) TSE laden (als modus niet off is en er een checkpoint-dir is). Per machinenaam een net
+   dat van golfvorm naar verbeterde golfvorm gaat.
+4) Per machine in data-root.
+   1) train-bank --> alle train-wavs die “train” en “normal” in de naam hebben (geen anomaly).
+   2) test-lijst --> test-wavs waar de filename laat zien of het normal (0) of anomaly (1) is,
+     plus source/target uit het pad.
+5) Embeddings bank. Voor elk bank-bestand geldt wav → optioneel TSE → mel (zelfde kaldi-fbank en
+   normalisatie als bij trainen) → gaat door frozen EAT → L2-genormaliseerde vector. Die vectoren
+   stapel je tot de bibliotheek van normale sound files voor die machine.
+6) Embeddings test. Zelfde keten voor elk testfragment; labels en domein onthouden.
+7) Scores. Voor elke testvector --> cosinusgelijkenis met alle bankvectoren, neem de beste match
+   (dichtstbijzijnde normale buur). Anomaly score = 1 min die beste cosinus (hoe hoger, hoe
+   verder van normaal).
+8) Metrics per machine, AUC en pAUC op alle testpoints, plus AUC-binnen source-only en
+   target-only subsets zoals in de eval-hulpfuncties. Alles in één rij per machine in een
+   DataFrame, weggeschreven naar --output-csv. Tot slot print het script gemiddelden over
+   machines en een harmonic mean over de “flatte” lijst van AUC_src, AUC_tgt, pAUC per machine
+   (zelfde idee als jullie samenvattende hmean in result-tabellen).
+
+Vergelijking baseline vs TSE-both, het script draait in snellius twee keer met dezelfde checkpoint maar
+een keer --tse-mode off (geen --tse-checkpoint-dir nodig) en een keer both + TSE-map, om de baseline en 
+TSE (both) te kunnen vergelijken.
+CLI: zie run_wang2025_snellius.slurm en run_wang2025_knn_eval.slurm voor typische aanroepen
 """
 
 import argparse

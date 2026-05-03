@@ -1,21 +1,26 @@
-"""Target signal enhancement (TSE) module, based on Fujimura et al. (2025).
+"""Target signal enhancement (TSE) module, gebaseerd op Fujimura et al. (2025).
 
-Gedeeld door test_Wang2025_Luc.ipynb, train_tse_snellius.py en eval (optioneel TSE op audio).
+TSE-module naar het idee van Fujimura e.a. (2025), NU technical report DCASE 2025 Task 2.
 
-The TSE model learns to remove non-machine background from a noisy recording.
-We implement a small, waveform in / waveform out masking network:
+Gedeeld door het notebook, train_tse_snellius.py en (optioneel) de eval.
 
-    waveform -> STFT -> magnitude -> U-Net -> soft mask in [0, 1]
-             -> mask * noisy magnitude -> ISTFT with noisy phase -> enhanced waveform.
+In het paper gebruiken ze per machine een TSE-model, reconstructieloss L_D (negatieve SNR)
+plus een gebalanceerde classificatieterm met een frontend-classifier, architectuur o.a.
+TF-Locoformer met STFT (bv. DFT 512, shift 128).
 
-This is a simplified aligned version of Fujimura et al. (2025), who use a
-TF-Locoformer with a negative **SNR** reconstruction term L_D plus a classifier
-(Eq. 1, Sec. 2.1; experiments: L_D = negative SNR loss, Sec. 3.1). We use the
-same SNR (dB) idea on the waveform: SNR = 10*log10(E[y^2]/E[(y_hat - y)^2]);
-training minimizes ``-SNR`` (``neg_snr_loss``). Architecture here: lightweight
-U-Net, feasible on a consumer GPU and Snellius.
+We gebruiken een eenvoudigere variant dan in het Fujimura paper. 
+De golfvorm gaat naar een STFT (het geluid wordt per kort tijdstukje uitgesplitst 
+in frequenties naar een spectrogram). Alleen de magnitudes (hoe sterk elk frequentie-onderdeel is) 
+gaan door een klein U-Net (een netwerk dat beeld patronen kan leren). Het net leert een 
+mask tussen 0 en 1, per vakje is de vraag hoeveel van dit frequentie-onderdeel we door laten. Daarna, 
+maskeermagnitude → inverse STFT (iSTFT) terug naar geluid, de fase (de fijne timing/klank van de 
+originele opname) nemen we van de ingang, zodat het beeld niet volledig kunstmatig klinkt. 
+Trainen minemen een SNR-loss, we hebben geen extra classificatie-loss zoals in het paper, die het daar nog naast 
+de reconstructie zet. Het doel blijft om achtergrondruis iets terug te dringen zodat het 
+machinesignaal duidelijker wordt voor de volgende stappen.
 
-Reference:
+
+Reference
   Fujimura, T., Kuroyanagi, I., and Toda, T. (2025). The NU systems for DCASE
   2025 challenge task 2 (Technical report). Nagoya University.
 """

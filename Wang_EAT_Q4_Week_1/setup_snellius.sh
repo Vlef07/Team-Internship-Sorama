@@ -1,5 +1,5 @@
 #!/bin/bash
-# Eenmalige venv op Snellius. Pijplijn zelf: run_wang2025_snellius.slurm (zelfde stappen als het notebook).
+# Eenmalige venv op Snellius. Pijplijn zelf, run_wang2025_snellius.slurm (zelfde stappen als het notebook).
 set -euo pipefail
 
 module purge

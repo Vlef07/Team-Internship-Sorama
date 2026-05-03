@@ -1,8 +1,32 @@
-"""EAT LoRA training (Wang 2025). STEP 2/4 in run_wang2025_snellius.slurm, notebook stap 20.
+"""EAT trainen met LoRA (Wang 2025). Dit is STEP 2/4 in run_wang2025_snellius.slurm;
+in het notebook komt het neer op de EAT-trainstap na TSE.
 
-Op de cluster: standaard **Stap B** (``EAT_TSE_IN_TRAINING=0``) = train op ruwe mels; TSE alleen in KNN
-(``TSE_MODE=both``). Zet ``EAT_TSE_IN_TRAINING=1`` vóór ``sbatch`` voor **Stap A** (TSE ook vóór mels
-in deze training-loop via ``--train-tse-checkpoint-dir``).
+Wat willen we bereiken?
+We hebben al een groot voorgetraind audiomodel (EAT). We willen het laten "wennen"
+aan DCASE: per fragment een compacte vector (embedding) die bruikbaar is om machines
+uit elkaar te houden. Daarvoor trainen we alleen dunne LoRA-lagen op het model, niet
+het hele netwerk opnieuw. De les die we meegeven komt uit ArcFace: dwing de embedding
+van hetzelfde type clip dichter bij het juiste machinemeta-label en weg van de rest.
+
+Stap voor stap wat er in de code gebeurt:
+
+1) Data verzamelen. create_master_dataframe leest per machine de attributes_00.csv
+   en houdt alleen train-regels. Zo krijg je één grote tabel met alle train-wav-paden.
+2) Labels tellen. get_dcase_num_classes + DCASELabelEncoder bouwen vaste klassen:
+   grofweg machinenaam + source/target (+ eventuele attribuutkolommen). Elk trainingsbestand
+   krijgt zo een integer label.
+3) Per batch-item in EATDCASEDataset, wav laden, mono 16 kHz, DC-offset eraf.
+    Daarna gebeurt niets meer op de golfvorm.
+4) Mel-spectrogram. Kaldi-fbank, vaste lengte (1024 frames), daarna dezelfde normalisatie
+   als in eval zodat train en test matchen.
+5) Door het netwerk. EATAnomalousTrainer roept de backbone aan: mel in, aan het eind
+   een embedding-vector (via extract_features / CLS-pad zoals het Wang-model dat heeft).
+6) ArcFaceLoss. Die vector wordt vergeleken met een set "prototype-richtingen" per klasse
+   (de learnable weight-matrix); de loss duwt de hoek tussen embedding en juiste klasse
+   gunstiger, zoals in Wangs rapport.
+7) Optimalisatie alleen op LoRA + ArcFace-kop, checkpoints en loss-CSV worden weggeschreven.
+
+Dus EAT leert alleen op ruwe mels leert, TSE gebruiken we dan bij kNN-eval.
 """
 
 import argparse
