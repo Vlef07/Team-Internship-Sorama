@@ -9,3 +9,7 @@ tqdm
 numpy<2
 matplotlib
 tensorboard
+torch
+torchvision
+torchaudio
+timm
