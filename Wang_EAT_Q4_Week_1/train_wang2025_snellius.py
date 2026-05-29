@@ -292,6 +292,40 @@ def create_master_dataframe(base_path):
     return master_df
 
 
+def filter_existing_wavs(master_df, base_path):
+    """Drop rows whose wav is missing on disk (attributes_00.csv kan meer noemen dan er staat).
+
+    Zo crasht de DataLoader niet op datasets waar de attribute-CSV en de aanwezige
+    wavs niet 1-op-1 matchen (bijv. gedeeltelijk-synthetische train-sets).
+    """
+    keep_mask = []
+    missing_per_machine = {}
+    for _, row in master_df.iterrows():
+        try:
+            fp = _resolve_train_wav_path(base_path, row)
+            exists = os.path.isfile(fp)
+        except Exception:
+            exists = False
+        keep_mask.append(exists)
+        if not exists:
+            m = str(row.get("_machine", "?"))
+            missing_per_machine[m] = missing_per_machine.get(m, 0) + 1
+
+    filtered = master_df[keep_mask].reset_index(drop=True)
+    n_missing = len(master_df) - len(filtered)
+    if n_missing > 0:
+        print(
+            f"waarschuwing: {n_missing} train-wav(s) uit attributes_00.csv ontbreken op schijf "
+            f"en worden overgeslagen. Per machine: {missing_per_machine}"
+        )
+    if len(filtered) == 0:
+        raise FileNotFoundError(
+            "Geen enkele train-wav uit de attribute-CSV's bestaat op schijf onder "
+            f"{base_path}. Controleer de data-root en de bestandsnamen."
+        )
+    return filtered
+
+
 def _move_optimizer_state_to_device(optimizer, device):
     for state in optimizer.state.values():
         for k, v in state.items():
@@ -382,6 +416,8 @@ def main():
     labels_list, _ = get_dcase_num_classes(data_root)
     encoder = DCASELabelEncoder(labels_list)
     master_df = create_master_dataframe(data_root)
+    master_df = filter_existing_wavs(master_df, data_root)
+    print(f"Train clips na filteren op bestaande wavs: {len(master_df)}")
 
     tse_train_models = None
     tse_dir = (args.train_tse_checkpoint_dir or "").strip()
