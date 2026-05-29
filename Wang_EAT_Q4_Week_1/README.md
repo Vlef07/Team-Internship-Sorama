@@ -156,3 +156,67 @@ Daarna **weer op Snellius (bash):** controleer of `PROJECT_DIR` in de `.slurm` k
 **Stappen vóór TSE in het notebook (1 tot en met 16):** uitleg en voorbereiding, geen exacte 1:1 regel in slurm, omdat op Snellius de data al op schijf staat en de job direct met TSE of EAT kan beginnen.
 
 Zie de paper: Fujimura, T., Kuroyanagi, I., and Toda, T. (2025). The NU systems for DCASE 2025 Challenge Task 2. Technical report, Nagoya University.
+
+# Officiele DCASE-ranking: train op Additional, test op Evaluation
+
+Deze pijplijn hertraint **EAT-LoRA + TSE op de Additional dataset** en scoort daarna de
+**Evaluation dataset**, zodat de officiele `dcase2025_task2_evaluator.py` een ranking-score
+(AUC, pAUC, official score, precision/recall/F1) kan berekenen.
+
+**Scripts (nieuw):**
+
+| STEP (slurm) | Script | Wat |
+|--------------|--------|-----|
+| 1/5 | `train_tse_snellius.py` | TSE per machine, train-clips uit Additional dataset (uit met `RUN_TSE=0`) |
+| 2/5 | `train_wang2025_snellius.py` | EAT-LoRA op Additional dataset (zelfde script, andere `--data-root`) |
+| 3/5 | `infer_eval_dcase_snellius.py` | KNN-bank uit Additional/train, score Evaluation/test, schrijf DCASE-CSV's |
+| 4/5 | `plot_training_loss.py` | loss-curves; score-histogrammen komen al uit STEP 3 |
+| 5/5 | `dcase2025_task2_evaluator.py` | officiele scores + plots (`--out_all True`) |
+
+`infer_eval_dcase_snellius.py` schrijft per machine/sectie twee headerloze CSV's in het
+officiele submissieformaat naar `teams/<team>/<system>/`:
+
+- `anomaly_score_<machine>_section_00_test.csv`  — `filename,score`
+- `decision_result_<machine>_section_00_test.csv` — `filename,0|1`
+
+De 0/1-drempel volgt de DCASE-baseline: een gamma-fit op de train-anomaliescores, 90e
+percentiel (de beslissingen tellen **niet** mee voor de ranking, alleen voor precision/recall/F1).
+De anomaliescore is de KNN min-cosine-afstand (1 − max cosine-similarity) tegen de bank.
+TSE-modus via `--tse-mode` (`both` = bank + test enhanced, cluster-default).
+
+## Op Snellius (one-shot via slurm)
+
+```bash
+BASE="$HOME/Sorama_Internship/EAT_TSE_same_pipeline_train_eval"
+NEW="$BASE/eat_tse_eval_dcase"
+mkdir -p "$NEW/data" "$NEW/logs" "$NEW/checkpoints/tse" "$NEW/results"
+
+# symlink je echte datamappen (pas de bron-paden aan):
+ln -sfn /pad/naar/Additional_dataset "$NEW/data/additional"
+ln -sfn /pad/naar/Evaluation_dataset "$NEW/data/evaluation"
+
+# clone de officiele evaluator in het project:
+git clone https://github.com/nttcslab/dcase2025_task2_evaluator.git "$NEW/dcase2025_task2_evaluator"
+
+cd "$NEW"
+sbatch run_eat_tse_eval_dcase.slurm
+```
+
+Toggles vóór `sbatch`: `export RUN_TSE=0` (geen TSE), `export TSE_MODE=off|test-only|both`,
+`export EAT_TSE_IN_TRAINING=1` (Stap A), `export TEAM_NAME=... SYSTEM_NAME=...`.
+
+## Resultaten
+
+- `dcase2025_task2_evaluator/teams_result/<system>_result.csv` — AUC/pAUC/precision/recall/F1 per machine + **official score**.
+- `dcase2025_task2_evaluator/teams_additional_result/` — aggregaten + anomaly-score plots (`--out_all True`).
+- `results/eval_inference/anm_score_hist_<machine>.png` + `eval_inference_summary.csv` — score-verdeling en drempel per machine.
+
+## Alleen de evaluator opnieuw draaien
+
+Als de CSV's in `teams/<team>/<system>/` al bestaan:
+
+```bash
+cd dcase2025_task2_evaluator
+python dcase2025_task2_evaluator.py --teams_root_dir ./teams --out_all True
+# of: bash 03_evaluation_eval_data.sh
+```
