@@ -33,6 +33,18 @@ def main():
     if df.empty:
         raise ValueError(f"Loss csv is leeg: {args.loss_csv}")
 
+    # Een append-only CSV kan herhaalde header-regels bevatten (bv. na een herstart
+    # of meerdere runs). Forceer numeriek en gooi niet-converteerbare rijen weg.
+    df["step"] = pd.to_numeric(df["step"], errors="coerce")
+    df["loss"] = pd.to_numeric(df["loss"], errors="coerce")
+    if "lr" in df.columns:
+        df["lr"] = pd.to_numeric(df["lr"], errors="coerce")
+    df = df.dropna(subset=["step", "loss"])
+    if df.empty:
+        raise ValueError(
+            f"Geen numerieke (step,loss)-rijen in {args.loss_csv} na opschonen van headers."
+        )
+
     df = df.sort_values("step").drop_duplicates(subset="step", keep="last")
 
     steps = df["step"].to_numpy()
