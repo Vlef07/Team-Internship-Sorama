@@ -292,31 +292,88 @@ def create_master_dataframe(base_path):
     return master_df
 
 
-def filter_existing_wavs(master_df, base_path):
-    """Drop rows whose wav is missing on disk (attributes_00.csv kan meer noemen dan er staat).
+def _clip_key(name: str) -> str:
+    """Unieke clip-sleutel los van attribuut-encoding: section_<NN>_<domain>_train_<n|a>_<idx>.
 
-    Zo crasht de DataLoader niet op datasets waar de attribute-CSV en de aanwezige
-    wavs niet 1-op-1 matchen (bijv. gedeeltelijk-synthetische train-sets).
+    De attributes_00.csv en de wavs op schijf kunnen verschillende attribuut-staarten
+    hebben (bv. CSV ``..._spd_4_D.wav`` vs schijf ``..._spd_4_n_D.wav``), maar de eerste
+    zes tokens identificeren de clip uniek en zijn in beide gelijk.
     """
+    base = os.path.basename(str(name)).replace("\\", "/").split("/")[-1]
+    if base.lower().endswith(".wav"):
+        base = base[:-4]
+    toks = base.split("_")
+    return "_".join(toks[: min(6, len(toks))])
+
+
+def _build_disk_index(base_path: str, machine: str) -> dict:
+    """{clip_key: 'machine/train/<echte_bestandsnaam>.wav'} voor alle train-wavs op schijf."""
+    index = {}
+    train_dir = os.path.join(base_path, machine, "train")
+    if not os.path.isdir(train_dir):
+        return index
+    for wav_name in sorted(os.listdir(train_dir)):
+        if not wav_name.lower().endswith(".wav"):
+            continue
+        index.setdefault(_clip_key(wav_name), f"{machine}/train/{wav_name}")
+    return index
+
+
+def resolve_and_filter_wavs(master_df, base_path):
+    """Koppel elke rij aan een bestaand wav-bestand; remap bij naam-mismatch, drop als laatste.
+
+    1) Bestaat het exacte pad uit ``file_name``? Houden.
+    2) Zo niet: zoek via de clip-sleutel het echte bestand op schijf en herschrijf ``file_name``
+       (attributen uit de CSV-kolommen blijven intact voor de labels).
+    3) Geen match: rij overslaan (met telling per machine).
+    """
+    master_df = master_df.copy()
+    file_names = master_df["file_name"].tolist()
+    machines = master_df["_machine"].tolist() if "_machine" in master_df.columns else [None] * len(master_df)
+
+    disk_indexes = {}
     keep_mask = []
+    remapped_per_machine = {}
     missing_per_machine = {}
-    for _, row in master_df.iterrows():
+
+    for i, row in master_df.iterrows():
+        machine = machines[i]
         try:
             fp = _resolve_train_wav_path(base_path, row)
             exists = os.path.isfile(fp)
         except Exception:
             exists = False
-        keep_mask.append(exists)
-        if not exists:
-            m = str(row.get("_machine", "?"))
+
+        if exists:
+            keep_mask.append(True)
+            continue
+
+        if machine is not None and machine not in disk_indexes:
+            disk_indexes[machine] = _build_disk_index(base_path, machine)
+
+        rel = disk_indexes.get(machine, {}).get(_clip_key(file_names[i])) if machine is not None else None
+        if rel is not None:
+            file_names[i] = rel
+            keep_mask.append(True)
+            remapped_per_machine[machine] = remapped_per_machine.get(machine, 0) + 1
+        else:
+            keep_mask.append(False)
+            m = str(machine)
             missing_per_machine[m] = missing_per_machine.get(m, 0) + 1
 
+    master_df["file_name"] = file_names
     filtered = master_df[keep_mask].reset_index(drop=True)
+
+    if remapped_per_machine:
+        print(
+            "info: train-wav paden geremapt via clip-sleutel (CSV<->schijf naam-mismatch). "
+            f"Per machine: {remapped_per_machine}"
+        )
     n_missing = len(master_df) - len(filtered)
     if n_missing > 0:
         print(
-            f"waarschuwing: {n_missing} train-wav(s) uit attributes_00.csv ontbreken op schijf "
-            f"en worden overgeslagen. Per machine: {missing_per_machine}"
+            f"waarschuwing: {n_missing} train-wav(s) uit attributes_00.csv niet gevonden op schijf "
+            f"en overgeslagen. Per machine: {missing_per_machine}"
         )
     if len(filtered) == 0:
         raise FileNotFoundError(
@@ -416,8 +473,8 @@ def main():
     labels_list, _ = get_dcase_num_classes(data_root)
     encoder = DCASELabelEncoder(labels_list)
     master_df = create_master_dataframe(data_root)
-    master_df = filter_existing_wavs(master_df, data_root)
-    print(f"Train clips na filteren op bestaande wavs: {len(master_df)}")
+    master_df = resolve_and_filter_wavs(master_df, data_root)
+    print(f"Train clips na koppelen aan bestaande wavs: {len(master_df)}")
 
     tse_train_models = None
     tse_dir = (args.train_tse_checkpoint_dir or "").strip()
