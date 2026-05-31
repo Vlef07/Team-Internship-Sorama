@@ -12,7 +12,7 @@ from sklearn import metrics
 from tqdm import tqdm
 from transformers import AutoModel
 
-from train_wang2025_snellius import (
+from train_EAT_LoRa_snellius import (
     EATAnomalousTrainer,
     _patch_hf_eat_tied_weights,
     _resolve_train_wav_path,
