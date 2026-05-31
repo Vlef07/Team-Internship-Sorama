@@ -97,5 +97,7 @@ Example: `Data Sorama-20260425T105917Z-3-003/Data Sorama/Bearing/Asset 1/0_norma
   ```
 
 **Notebooks:**
-- `test_Wang2025_Luc.ipynb` - Test Wang2025 model
-- `AudDSR.ipynb` - AudDSR analysis
+- `test_Wang2025_clean.ipynb` - **RECOMMENDED** - Clean Wang2025 model testing (label encoding, data loading, inference)
+- `AudDSR_clean.ipynb` - **RECOMMENDED** - Clean AudDSR training pipeline (Stage 1: VQ-VAE, Stage 2: Detector)
+- `test_Wang2025_Luc.ipynb` - Original Wang2025 notebook (extensive comments, for reference)
+- `AudDSR.ipynb` - Original AudDSR notebook (large cells, for reference)
