@@ -1,31 +1,101 @@
 # Team-Internship-Sorama
 
-## Initialization
-Start een virtual environment.
+## Setup
 
-Gebruik pip==24.0, en installeer de volgende packages:
+1. Create and activate virtual environment:
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate  # Windows
+   source .venv/bin/activate  # Linux/Mac
+   ```
 
-`pip install scikit-learn h5py==3.10.0 numpy==1.26.3 omegaconf==2.0.6 pyarrow==15.0.0 scikit_learn==1.3.2 soundfile==0.12.1 timm==0.9.12 torch==2.1.2 torchaudio==2.1.2 torchsummary==1.5.1 tensorboardX==2.6.2.2 transformers==4.51.3 matplotlib `
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-Zorg er ook voor dat je de unilm/beats repo cloned voor het BEATs model. Clonen kan via https://github.com/microsoft/unilm/tree/master/beats. Zorg ook dat je `BEATs_iter3_plus_AS2M.pt` hebt download via de README in de unilm/beats repo en zet deze in deze git repo.
+3. Download EAT model from https://github.com/cwx-worst-one/EAT
 
-Voor het EAT model, clone de volgende git repo https://github.com/cwx-worst-one/EAT. 
+4. Download DCASE2025 data: https://dcase.community/challenge2025/task-first-shot-unsupervised-anomalous-sound-detection-for-machine-condition-monitoring
 
+5. Download Sorama data (optional) - Available in multiple dataset versions:
+   - `Data Sorama-20260425T105917Z-3-001`
+   - `Data Sorama-20260425T105917Z-3-002`
+   - `Data Sorama-20260425T105917Z-3-003`
 
-Zorg ervoor dat je je data op de juiste manier opslaat. De data is te downloaden via: https://dcase.community/challenge2025/task-first-shot-unsupervised-anomalous-sound-detection-for-machine-condition-monitoring. Volg de volgende directory structure:
+## Data Structure
 
-```text
-data/
-└── dcase2025t2/
-    ├── dev_data/
-    │   ├── processed/
-    │   └── raw/
-    │       └── {machine}/
-    │           ├── test/
-    │           ├── train/
-    │           └── attributes_00.csv
-    └── eval_data/
-        ├── processed/
-        └── raw/
-            └── {machine}/
+**DCASE2025:**
 ```
+data/dcase2025t2/
+└── {dataset_id}/
+    ├── dev_{machine}/{machine}/supplemental/
+    │   └── section_00_machine_source_0000_noAttribute.wav
+    ├── dev_{machine}/{machine}/normal_files/
+    ├── dev_{machine}/{machine}/anomalous_files/
+    ├── test_{machine}/{machine}/test_files/
+    └── ...
+```
+
+Example: `15097779/dev_bearing/bearing/supplemental/section_00_machine_source_0000_noAttribute.wav`
+
+**Sorama (optional):**
+```
+Sorama_data/
+├── Data Sorama-20260425T105917Z-3-001/
+│   └── Data Sorama/
+│       ├── Bearing/
+│       │   └── Asset {1-4}/
+│       │       ├── 0_normal/
+│       │       │   └── *.wav
+│       │       └── 1_anomaly/
+│       │           └── *.wav
+│       └── Pump/
+│           └── Asset {1-4}/
+│               ├── 0_normal/
+│               │   └── *.wav
+│               └── 1_anomaly/
+│                   └── *.wav
+├── Data Sorama-20260425T105917Z-3-002/
+└── Data Sorama-20260425T105917Z-3-003/
+```
+
+Example: `Data Sorama-20260425T105917Z-3-003/Data Sorama/Bearing/Asset 1/0_normal/beamformed_api_response_1404_37s_R1B1_140cm_E.wav`
+
+## Scripts
+
+**Data Synthesis:**
+- `synthesize_dcase_data.py` - Synthesize DCASE dataset
+  ```bash
+  python synthesize_dcase_data.py --input_dir <path> --output_dir <path>
+  ```
+
+- `synthesize_sorama_data.py` - Synthesize Sorama dataset
+  ```bash
+  python synthesize_sorama_data.py --input-roots <path1> [<path2> <path3>] --output-root <path> [--copies-per-source 10] [--dry-run]
+  ```
+  Example:
+  ```bash
+  python synthesize_sorama_data.py --input-roots "C:\Downloads\Sorama_data\Data Sorama-20260425T105917Z-3-001" --output-root "./sorama_synthetic" --copies-per-source 5
+  ```
+
+**Training:**
+- `train_EAT_LoRa_snellius.py` - Train EAT model with LoRA adapters
+  ```bash
+  python train_EAT_LoRa_snellius.py --data_dir <path> --output_dir <path> [--epochs 10]
+  ```
+
+- `train_eat_auddsr_snellius.py` - Train EAT + AudDSR model
+  ```bash
+  python train_eat_auddsr_snellius.py --data_dir <path> --output_dir <path>
+  ```
+
+**Evaluation:**
+- `eval_wang2025_knn_snellius.py` - Evaluate Wang2025 with KNN
+  ```bash
+  python eval_wang2025_knn_snellius.py --data_dir <path> --model_path <path>
+  ```
+
+**Notebooks:**
+- `test_Wang2025_Luc.ipynb` - Test Wang2025 model
+- `AudDSR.ipynb` - AudDSR analysis
