@@ -1,6 +1,0 @@
-checkpoints/
-results/
-*.pt
-__pycache__/
-*.pyc
-.DS_Store
