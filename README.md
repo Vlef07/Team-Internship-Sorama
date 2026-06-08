@@ -1,113 +1,103 @@
 # Team-Internship-Sorama
 
-# Instructions: Using Jupytext with VS Code
+## Setup
 
-## 1. Install Jupytext
+1. Create and activate virtual environment:
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate  # Windows
+   source .venv/bin/activate  # Linux/Mac
+   ```
 
-Open a terminal in your project’s virtual environment and run:
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-```bash
-pip install jupytext
+3. Download EAT model from https://github.com/cwx-worst-one/EAT
+
+4. Download DCASE2025 data: https://dcase.community/challenge2025/task-first-shot-unsupervised-anomalous-sound-detection-for-machine-condition-monitoring
+
+5. Download Sorama data (optional) - Available in multiple dataset versions:
+   - `Data Sorama-20260425T105917Z-3-001`
+   - `Data Sorama-20260425T105917Z-3-002`
+   - `Data Sorama-20260425T105917Z-3-003`
+
+## Data Structure
+
+**DCASE2025:**
+```
+data/dcase2025t2/
+└── {dataset_id}/
+    ├── dev_{machine}/{machine}/supplemental/
+    │   └── section_00_machine_source_0000_noAttribute.wav
+    ├── dev_{machine}/{machine}/normal_files/
+    ├── dev_{machine}/{machine}/anomalous_files/
+    ├── test_{machine}/{machine}/test_files/
+    └── ...
 ```
 
-Verify installation:
+Example: `15097779/dev_bearing/bearing/supplemental/section_00_machine_source_0000_noAttribute.wav`
 
-```bash
-jupytext --version
+**Sorama (optional):**
+```
+Sorama_data/
+├── Data Sorama-20260425T105917Z-3-001/
+│   └── Data Sorama/
+│       ├── Bearing/
+│       │   └── Asset {1-4}/
+│       │       ├── 0_normal/
+│       │       │   └── *.wav
+│       │       └── 1_anomaly/
+│       │           └── *.wav
+│       └── Pump/
+│           └── Asset {1-4}/
+│               ├── 0_normal/
+│               │   └── *.wav
+│               └── 1_anomaly/
+│                   └── *.wav
+├── Data Sorama-20260425T105917Z-3-002/
+└── Data Sorama-20260425T105917Z-3-003/
 ```
 
----
+Example: `Data Sorama-20260425T105917Z-3-003/Data Sorama/Bearing/Asset 1/0_normal/beamformed_api_response_1404_37s_R1B1_140cm_E.wav`
 
-## 2. Pair `.ipynb` with `.py`
+## Scripts
 
-
-* Convert notebook → script:
-
+**Data Synthesis:**
+- `synthesize_dcase_data.py` - Synthesize DCASE dataset
   ```bash
-  jupytext --to py notebook.ipynb
+  python synthesize_dcase_data.py --input_dir <path> --output_dir <path>
   ```
 
-* Convert script → notebook:
-
+- `synthesize_sorama_data.py` - Synthesize Sorama dataset
   ```bash
-  jupytext --to notebook script.py
+  python synthesize_sorama_data.py --input-roots <path1> [<path2> <path3>] --output-root <path> [--copies-per-source 10] [--dry-run]
+  ```
+  Example:
+  ```bash
+  python synthesize_sorama_data.py --input-roots "C:\Downloads\Sorama_data\Data Sorama-20260425T105917Z-3-001" --output-root "./sorama_synthetic" --copies-per-source 5
   ```
 
-* For each notebook you want to track in Git:
-
-    ```bash
-    jupytext --set-formats ipynb,py:percent notebook.ipynb
-    ```
-
-    This creates a paired Python script `notebook.py` with `# %%` markers for each cell.
-
-From now on:
-
-* Edit/run the `.py` file in VS Code using the **Jupyter extension**.
-* The `.ipynb` can still be opened normally if you prefer the notebook interface.
-
----
-
-## 3. Keeping Files in Sync
-
-When you make changes, you can sync both directions:
-
-* When you push, update `.py` from `.ipynb`:
-
+**Training:**
+- `train_EAT_LoRa_snellius.py` - Train EAT model with LoRA adapters
   ```bash
-  jupytext --sync notebook.ipynb
+  python train_EAT_LoRa_snellius.py --data_dir <path> --output_dir <path> [--epochs 10]
   ```
 
-* When you pull, update `.ipynb` from `.py`:
-
+- `train_eat_auddsr_snellius.py` - Train EAT + AudDSR model
   ```bash
-  jupytext --sync notebook.py
+  python train_eat_auddsr_snellius.py --data_dir <path> --output_dir <path>
   ```
 
-If you want **auto-sync**, we can set up a Git pre-commit hook so syncing happens before commits (see below).
+**Evaluation:**
+- `eval_wang2025_knn_snellius.py` - Evaluate Wang2025 with KNN
+  ```bash
+  python eval_wang2025_knn_snellius.py --data_dir <path> --model_path <path>
+  ```
 
----
-
-## 4. Working in VS Code
-
-* Install the **Jupyter extension** from the VS Code marketplace.
-* Open the paired `.py` file in VS Code.
-* You’ll see **Run Cell** (`▶`) buttons above `# %%` sections. These behave like Jupyter cells.
-* Outputs appear in the **Interactive Window**, just like a notebook.
-
-## 5. Commit and push
-
-**Please push only .py files to the remote and keep notebooks on your local machine. If you want you can skip notebooks altogether and use .py files instead (as shown in step 4). I have added all files with .ipynb extension to .gitignore so they will not be tracked.**
-
-
-# Setup instruction
-
-1. Navigate to your project folder;
-
-2. Create a `.venv` virtual environment;
-    > ```bash
-    > python -m venv .venv
-    > ```
-
-3. Activate your environment:
-
-    - Linux / MacOS:
-        > ```bash
-        > source .venv/bin/activate
-        > ```
-
-    - Windows PowerShell:
-        > ```bash
-        > .\.venv\Scripts\Activate.ps1
-        > ```
-
-    - Windows Command Prompt:
-        > ```bash
-        > .\.venv\Scripts\activate.bat
-        > ```
-
-4. Install packages:
-
-    > ```bash
-    > pip install ipykernel numpy pandas scipy statsmodels scikit-learn scikit-fuzzy matplotlib seaborn
-    > ```
+**Notebooks:**
+- `test_Wang2025_clean.ipynb` - **RECOMMENDED** - Clean Wang2025 model testing (label encoding, data loading, inference)
+- `AudDSR_clean.ipynb` - **RECOMMENDED** - Clean AudDSR training pipeline (Stage 1: VQ-VAE, Stage 2: Detector)
+- `test_Wang2025_Luc.ipynb` - Original Wang2025 notebook (extensive comments, for reference)
+- `AudDSR.ipynb` - Original AudDSR notebook (large cells, for reference)

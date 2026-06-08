@@ -1,7 +1,5 @@
-.venv*
-*.ipynb
+*.npy
 *.pkl
-*.dat
-*.jpg
-*.xml
+*.wav
 *.csv
+*.pt
